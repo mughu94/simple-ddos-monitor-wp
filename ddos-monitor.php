@@ -96,6 +96,7 @@ if (!class_exists('WP_List_Table')) {
 }
 
 // Extend WP_List_Table to create a custom table
+// Extend WP_List_Table to create a custom table
 class DDoS_Monitor_Table extends WP_List_Table {
     public function prepare_items() {
         $per_page = 20;
@@ -122,7 +123,11 @@ class DDoS_Monitor_Table extends WP_List_Table {
             $orderby = (!empty($_REQUEST['orderby'])) ? $_REQUEST['orderby'] : 'last_access'; // If no sort, default to last_access
             $order = (!empty($_REQUEST['order'])) ? $_REQUEST['order'] : 'desc'; // If no order, default to desc
 
-            $result = strcmp($a[$orderby], $b[$orderby]);
+            if ($orderby == 'count' || $orderby == 'last_access') {
+                $result = $a[$orderby] - $b[$orderby]; // Numeric comparison
+            } else {
+                $result = strcmp($a[$orderby], $b[$orderby]); // String comparison
+            }
 
             return ($order === 'asc') ? $result : -$result;
         });
@@ -180,6 +185,7 @@ class DDoS_Monitor_Table extends WP_List_Table {
     }
 }
 
+
 // Function to clear all logged IPs
 function ddos_monitor_clear_log() {
     update_option('ddos_monitor_ip_log', []);
@@ -227,8 +233,9 @@ function ddos_monitor_admin_page() {
 
     $blocked_ips = get_option('ddos_monitor_blocked_ips', []);
 
-    echo '<h2>Blocked IPs</h2>';
+    // Check if there are blocked IPs to display
     if (!empty($blocked_ips)) {
+        echo '<h2>Blocked IPs</h2>';
         echo '<table class="widefat"><thead><tr><th>IP Address</th><th>Action</th></tr></thead><tbody>';
         foreach ($blocked_ips as $ip) {
             echo '<tr>';
@@ -238,11 +245,14 @@ function ddos_monitor_admin_page() {
         }
         echo '</tbody></table>';
     } else {
+        // Display a message if no IPs are blocked
+        echo '<h2>Blocked IPs</h2>';
         echo '<p>No IPs blocked.</p>';
     }
 
     echo '</div>';
 }
+
 
 // Function to unblock IP addresses
 function ddos_monitor_unblock_ip($ip) {
