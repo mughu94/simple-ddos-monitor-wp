@@ -2,7 +2,7 @@
 /*
 Plugin Name: DDoS Monitor
 Description: Monitors traffic and blocks IPs suspected of DDoS attacks.
-Version: 1.3
+Version: 1.5
 Author: Muhamad Ghufron
 */
 
@@ -22,6 +22,11 @@ function ddos_monitor_log_ip() {
     $ip = $_SERVER['REMOTE_ADDR'];
     $user_agent = strtolower($_SERVER['HTTP_USER_AGENT']);
     $current_time = current_time('timestamp');
+
+    // Check if the current user is logged in and has the manage_options capability
+    if (is_user_logged_in() && current_user_can('manage_options')) {
+        return; // Skip logging for logged-in admins
+    }
 
     // Check if the request is from a known bot
     foreach ($known_bots as $bot) {
@@ -92,7 +97,7 @@ if (!class_exists('WP_List_Table')) {
 
 // Extend WP_List_Table to create a custom table
 class DDoS_Monitor_Table extends WP_List_Table {
-      public function prepare_items() {
+    public function prepare_items() {
         $per_page = 20;
         $columns = $this->get_columns();
         $hidden = [];
@@ -114,7 +119,12 @@ class DDoS_Monitor_Table extends WP_List_Table {
 
         // Sort data
         usort($data, function($a, $b) {
-            return $b['last_access'] - $a['last_access'];
+            $orderby = (!empty($_REQUEST['orderby'])) ? $_REQUEST['orderby'] : 'last_access'; // If no sort, default to last_access
+            $order = (!empty($_REQUEST['order'])) ? $_REQUEST['order'] : 'desc'; // If no order, default to desc
+
+            $result = strcmp($a[$orderby], $b[$orderby]);
+
+            return ($order === 'asc') ? $result : -$result;
         });
 
         // Pagination logic
@@ -132,15 +142,24 @@ class DDoS_Monitor_Table extends WP_List_Table {
         ]);
     }
 
-
     public function get_columns() {
         $columns = [
             'ip_address'   => 'IP Address',
             'count'        => 'Request Count',
             'last_access'  => 'Last Access',
-            'user_agent'   => 'User Agent'
+            'user_agent'   => 'User Agent',
+            'action'       => 'Action'
         ];
         return $columns;
+    }
+
+    public function get_sortable_columns() {
+        $sortable_columns = [
+            'ip_address'   => ['ip', false],
+            'count'        => ['count', false],
+            'last_access'  => ['last_access', true]
+        ];
+        return $sortable_columns;
     }
 
     public function column_default($item, $column_name) {
@@ -153,6 +172,8 @@ class DDoS_Monitor_Table extends WP_List_Table {
                 return esc_html(date('Y-m-d H:i:s', $item['last_access']));
             case 'user_agent':
                 return esc_html($item['user_agent']);
+            case 'action':
+                return '<form method="post"><input type="hidden" name="block_ip" value="' . esc_attr($item['ip']) . '"><input type="submit" class="button button-secondary" value="Block"></form>';
             default:
                 return print_r($item, true); // For debugging purposes
         }
@@ -164,7 +185,6 @@ function ddos_monitor_clear_log() {
     update_option('ddos_monitor_ip_log', []);
     echo '<div class="updated"><p>All logged IPs have been cleared.</p></div>';
 }
-
 
 // Admin page
 function ddos_monitor_admin_page() {
@@ -182,6 +202,13 @@ function ddos_monitor_admin_page() {
     // Handle clear log action
     if (isset($_POST['clear_log'])) {
         ddos_monitor_clear_log();
+    }
+
+    // Handle block IP action
+    if (isset($_POST['block_ip'])) {
+        $ip_to_block = sanitize_text_field($_POST['block_ip']);
+        ddos_monitor_block_ip($ip_to_block);
+        echo '<div class="updated"><p>IP ' . esc_html($ip_to_block) . ' has been blocked.</p></div>';
     }
 
     echo '<div class="wrap">';
@@ -217,10 +244,10 @@ function ddos_monitor_admin_page() {
     echo '</div>';
 }
 
-
 // Function to unblock IP addresses
 function ddos_monitor_unblock_ip($ip) {
     $blocked_ips = get_option('ddos_monitor_blocked_ips', []);
     $blocked_ips = array_diff($blocked_ips, [$ip]);
     update_option('ddos_monitor_blocked_ips', $blocked_ips);
 }
+?>
